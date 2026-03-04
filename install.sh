@@ -49,9 +49,9 @@ if [ -f "$INDEX" ] && ! grep -q "blockrun-tools" "$INDEX"; then
   if [ -n "$LAST_REGISTER" ]; then
     sed -i "${LAST_REGISTER}a\\    api.registerTool(createBlockRunModelsTool(), { name: \"blockrun_models\" });" "$INDEX"
     LAST_REGISTER=$((LAST_REGISTER + 1))
-    sed -i "${LAST_REGISTER}a\\    api.registerTool(createBlockRunChatTool(api, config), { name: \"blockrun_chat\" });" "$INDEX"
+    sed -i "${LAST_REGISTER}a\\    api.registerTool(createBlockRunChatTool(), { name: \"blockrun_chat\" });" "$INDEX"
     LAST_REGISTER=$((LAST_REGISTER + 1))
-    sed -i "${LAST_REGISTER}a\\    api.registerTool(createBlockRunImageTool(api, config), { name: \"blockrun_image\" });" "$INDEX"
+    sed -i "${LAST_REGISTER}a\\    api.registerTool(createBlockRunImageTool(), { name: \"blockrun_image\" });" "$INDEX"
   fi
 
   echo "Patched index.ts"

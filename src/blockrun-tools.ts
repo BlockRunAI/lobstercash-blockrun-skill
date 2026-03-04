@@ -1,166 +1,114 @@
 import { Type } from "@sinclair/typebox";
-import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk";
+import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk";
 import {
-  getWallet,
-  getKeypair,
-  isWalletConfigured,
-  updateSessionTokens,
-  type WalletData,
-} from "./wallet.js";
-import {
-  createTransaction,
-  approveTransaction,
-  waitForTransaction,
-  refreshInit,
-  refreshToken,
-  isAccessTokenExpiredError,
-  signMessageForProxy,
-  type CrossmintApiConfig,
-  type ProxyTransactionMessageEncoding,
-} from "./api.js";
-import { type CrossmintPluginConfig } from "./config.js";
+  PublicKey,
+  TransactionMessage,
+  TransactionInstruction,
+  VersionedTransaction,
+  Connection,
+  Keypair,
+} from "@solana/web3.js";
+import bs58 from "bs58";
 
 const BLOCKRUN_API =
   "https://blockrun-sol-staging-demo-1092497648280.us-central1.run.app/api/v1";
+const SOLANA_RPC = "https://api.mainnet-beta.solana.com";
+
+const TOKEN_PROGRAM_ID = new PublicKey(
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+);
+const ATA_PROGRAM_ID = new PublicKey(
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+);
+const COMPUTE_BUDGET_PROGRAM = new PublicKey(
+  "ComputeBudget111111111111111111111111111111"
+);
+const MEMO_PROGRAM = new PublicKey(
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+);
+
+// USDC on Solana mainnet
+const USDC_MINT = new PublicKey(
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+);
 const USDC_DECIMALS = 6;
 
 function getAgentId(ctx: OpenClawPluginToolContext): string {
   return ctx.agentId || "main";
 }
 
-function toServerConfig(config: CrossmintPluginConfig): CrossmintApiConfig {
-  return {
-    serverBaseUrl: config.serverBaseUrl,
-    requestTimeoutMs: config.requestTimeoutMs,
-  };
-}
-
-function toAuthenticatedConfig(
-  config: CrossmintPluginConfig,
-  accessToken: string
-): CrossmintApiConfig {
-  return {
-    serverBaseUrl: config.serverBaseUrl,
-    requestTimeoutMs: config.requestTimeoutMs,
-    accessToken,
-  };
-}
-
-function secondsNow(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-function tokenMissingOrExpiring(walletData: WalletData): boolean {
-  if (!walletData.accessToken || !walletData.accessTokenExpiresAt) return true;
-  return walletData.accessTokenExpiresAt <= secondsNow() + 30;
-}
-
-async function signUtf8AsHex(
-  agentId: string,
-  utf8Message: string
-): Promise<string> {
-  const keypair = getKeypair(agentId);
-  if (!keypair)
-    throw new Error(`No signing keypair found for agent "${agentId}".`);
-  const messageBytes = new TextEncoder().encode(utf8Message);
-  const nacl = (await import("tweetnacl")).default;
-  const signature = nacl.sign.detached(messageBytes, keypair.secretKey);
-  return Buffer.from(signature).toString("hex");
-}
-
-function signProxyMessageForAgent(
-  agentId: string,
-  message: string,
-  encoding: ProxyTransactionMessageEncoding
-): string {
-  const keypair = getKeypair(agentId);
-  if (!keypair)
-    throw new Error(`No signing keypair found for agent "${agentId}".`);
-  return signMessageForProxy(keypair, message, encoding);
-}
-
-async function refreshAgentTokens(
-  agentId: string,
-  walletData: WalletData,
-  config: CrossmintPluginConfig
-): Promise<WalletData> {
-  if (!walletData.refreshToken)
-    throw new Error(
-      `Wallet session missing refresh token for agent "${agentId}".`
-    );
-  const serverConfig = toServerConfig(config);
-  const init = await refreshInit(serverConfig, {
-    agentId,
-    agentPubKey: walletData.address,
-  });
-  const refreshSignature = await signUtf8AsHex(agentId, init.refreshNonce);
-  const refreshed = await refreshToken(serverConfig, {
-    agentId,
-    agentPubKey: walletData.address,
-    nonceId: init.nonceId,
-    refreshToken: walletData.refreshToken,
-    refreshSignature,
-  });
-  return updateSessionTokens(
-    agentId,
-    refreshed.accessToken,
-    refreshed.refreshToken,
-    refreshed.expiresAt
+function getAgentKeypair(): Keypair {
+  const fs = require("fs");
+  const path = require("path");
+  const walletsPath = path.join(
+    process.env.HOME || "/home/azureuser",
+    ".openclaw/lobster-cash/wallets.json"
   );
+  const data = JSON.parse(fs.readFileSync(walletsPath, "utf-8"));
+  const wallet = data.wallets?.main;
+  if (!wallet?.secretKey) {
+    throw new Error("No agent keypair found. Run lobster_setup first.");
+  }
+  return Keypair.fromSecretKey(bs58.decode(wallet.secretKey));
 }
 
-async function ensureAuthenticated(
-  agentId: string,
-  config: CrossmintPluginConfig
-): Promise<{ walletData: WalletData; apiConfig: CrossmintApiConfig }> {
-  const walletData = getWallet(agentId);
-  if (!walletData)
-    throw new Error(
-      `No wallet found for agent "${agentId}". Run lobster_setup first.`
-    );
-  if (!isWalletConfigured(agentId) || !walletData.walletAddress)
-    throw new Error(
-      `Wallet not configured for agent "${agentId}". Run lobster_setup first.`
-    );
-  let readyWallet = walletData;
-  if (tokenMissingOrExpiring(readyWallet)) {
-    readyWallet = await refreshAgentTokens(agentId, readyWallet, config);
-  }
-  if (!readyWallet.accessToken)
-    throw new Error(
-      `Wallet access token missing for agent "${agentId}". Run lobster_setup.`
-    );
-  return {
-    walletData: readyWallet,
-    apiConfig: toAuthenticatedConfig(config, readyWallet.accessToken),
-  };
+function findATA(owner: PublicKey, mint: PublicKey): PublicKey {
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    ATA_PROGRAM_ID
+  );
+  return ata;
 }
 
-async function withAuthenticatedApi<T>(
-  agentId: string,
-  config: CrossmintPluginConfig,
-  fn: (context: {
-    walletData: WalletData;
-    apiConfig: CrossmintApiConfig;
-  }) => Promise<T>
-): Promise<T> {
-  const context = await ensureAuthenticated(agentId, config);
-  try {
-    return await fn(context);
-  } catch (error) {
-    if (!isAccessTokenExpiredError(error)) throw error;
-    const refreshed = await refreshAgentTokens(
-      agentId,
-      context.walletData,
-      config
-    );
-    if (!refreshed.accessToken)
-      throw new Error("Token refresh succeeded but no access token.");
-    return fn({
-      walletData: refreshed,
-      apiConfig: toAuthenticatedConfig(config, refreshed.accessToken),
-    });
-  }
+// ── Solana instruction builders ─────────────────────────────
+
+/** Build SPL TransferChecked instruction data: [12, amount_u64_le, decimals_u8] */
+function buildTransferCheckedData(amount: bigint, decimals: number): Buffer {
+  const data = Buffer.alloc(1 + 8 + 1);
+  data.writeUInt8(12, 0);
+  data.writeBigUInt64LE(amount, 1);
+  data.writeUInt8(decimals, 9);
+  return data;
+}
+
+/** Build ComputeBudget SetComputeUnitLimit instruction: [2, units_u32_le] */
+function buildSetComputeUnitLimit(units: number): TransactionInstruction {
+  const data = Buffer.alloc(5);
+  data.writeUInt8(2, 0);
+  data.writeUInt32LE(units, 1);
+  return new TransactionInstruction({
+    programId: COMPUTE_BUDGET_PROGRAM,
+    keys: [],
+    data,
+  });
+}
+
+/** Build ComputeBudget SetComputeUnitPrice instruction: [3, microLamports_u64_le] */
+function buildSetComputeUnitPrice(
+  microLamports: number
+): TransactionInstruction {
+  const data = Buffer.alloc(9);
+  data.writeUInt8(3, 0);
+  data.writeBigUInt64LE(BigInt(microLamports), 1);
+  return new TransactionInstruction({
+    programId: COMPUTE_BUDGET_PROGRAM,
+    keys: [],
+    data,
+  });
+}
+
+/** Build Memo instruction with random nonce */
+function buildMemoInstruction(): TransactionInstruction {
+  const nonce = new Uint8Array(16);
+  crypto.getRandomValues(nonce);
+  const memoText = Array.from(nonce)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return new TransactionInstruction({
+    programId: MEMO_PROGRAM,
+    keys: [],
+    data: Buffer.from(memoText, "utf-8"),
+  });
 }
 
 // ── x402 types ──────────────────────────────────────────────
@@ -172,80 +120,99 @@ interface X402PaymentOption {
   payTo: string;
   asset: string;
   maxTimeoutSeconds?: number;
-  extra?: {
-    feePayer?: string;
-    features?: Record<string, unknown>;
-    [key: string]: unknown;
-  };
+  extra?: { feePayer?: string; [key: string]: unknown };
 }
 
 interface X402PaymentRequired {
   x402Version: number;
-  resource?: { url?: string; description?: string; contentType?: string };
   accepts: X402PaymentOption[];
 }
 
-// ── x402 payment via lobster.cash ───────────────────────────
+// ── x402 partially-signed transaction ───────────────────────
 
 /**
- * Send USDC payment via lobster.cash smart wallet and return the
- * on-chain transaction hash for x402 proof.
+ * Build a partially-signed x402 SPL TransferChecked transaction.
+ * feePayer = facilitator (from x402 extra.feePayer)
+ * Signed by agent keypair as token authority only.
+ * Returns the base64-encoded X-PAYMENT header value.
  */
-async function payViaLobster(
+async function buildX402Payment(
   option: X402PaymentOption,
-  agentId: string,
-  config: CrossmintPluginConfig
+  x402Version: number
 ): Promise<string> {
-  const amountBaseUnits = BigInt(option.amount);
-  const humanAmount = (
-    Number(amountBaseUnits) / Math.pow(10, USDC_DECIMALS)
-  ).toString();
+  const keypair = getAgentKeypair();
+  const connection = new Connection(SOLANA_RPC);
 
-  return withAuthenticatedApi(agentId, config, async ({ walletData, apiConfig }) => {
-    const created = await createTransaction(
-      apiConfig,
-      walletData.walletAddress!,
-      { type: "transfer", to: option.payTo, token: "usdc", amount: humanAmount }
-    );
+  const feePayer = option.extra?.feePayer;
+  if (!feePayer) {
+    throw new Error("feePayer missing in x402 payment requirements");
+  }
 
-    const signature = signProxyMessageForAgent(
-      agentId,
-      created.messageToSign,
-      created.messageToSignEncoding
-    );
+  const feePayerPubkey = new PublicKey(feePayer);
+  const payTo = new PublicKey(option.payTo);
+  const amount = BigInt(option.amount);
 
-    let tx = await approveTransaction(
-      apiConfig,
-      walletData.walletAddress!,
-      created.id,
-      signature
-    );
+  // Derive ATAs
+  const sourceATA = findATA(keypair.publicKey, USDC_MINT);
+  const destATA = findATA(payTo, USDC_MINT);
 
-    tx = await waitForTransaction(
-      apiConfig,
-      walletData.walletAddress!,
-      tx.id,
-      60000
-    );
+  // Build instructions
+  const computeUnitLimit = buildSetComputeUnitLimit(20000);
+  const computeUnitPrice = buildSetComputeUnitPrice(1);
 
-    if (tx.status !== "success")
-      throw new Error(`Payment transaction ${tx.status}: ${tx.id}`);
-    if (!tx.hash)
-      throw new Error("Payment succeeded but no transaction hash returned");
-
-    return tx.hash;
+  const transferIx = new TransactionInstruction({
+    programId: TOKEN_PROGRAM_ID,
+    keys: [
+      { pubkey: sourceATA, isSigner: false, isWritable: true },
+      { pubkey: USDC_MINT, isSigner: false, isWritable: false },
+      { pubkey: destATA, isSigner: false, isWritable: true },
+      { pubkey: keypair.publicKey, isSigner: true, isWritable: false },
+    ],
+    data: buildTransferCheckedData(amount, USDC_DECIMALS),
   });
+
+  const memoIx = buildMemoInstruction();
+
+  // Get recent blockhash
+  const { blockhash } = await connection.getLatestBlockhash();
+
+  // Build v0 transaction message
+  const messageV0 = new TransactionMessage({
+    payerKey: feePayerPubkey,
+    recentBlockhash: blockhash,
+    instructions: [computeUnitPrice, computeUnitLimit, transferIx, memoIx],
+  }).compileToV0Message();
+
+  // Create versioned transaction and partially sign (agent signs as token authority)
+  const tx = new VersionedTransaction(messageV0);
+  tx.sign([keypair]);
+
+  // Serialize to base64
+  const serialized = tx.serialize();
+  const base64Tx = Buffer.from(serialized).toString("base64");
+
+  // Build x402 payment header. The decoded header IS the paymentPayload
+  // sent to the facilitator, so scheme/network must be top-level.
+  const headerPayload = {
+    x402Version,
+    scheme: option.scheme,
+    network: option.network,
+    accepted: option,
+    payload: {
+      transaction: base64Tx,
+    },
+  };
+
+  return btoa(JSON.stringify(headerPayload));
 }
 
 /**
  * Fetch with x402 payment handling.
- * On 402: pay via lobster.cash smart wallet, retry with payment proof.
+ * On 402: build partially-signed tx, retry with X-PAYMENT header.
  */
 async function fetchWithX402(
   url: string,
-  init: RequestInit,
-  agentId: string,
-  config: CrossmintPluginConfig
+  init: RequestInit
 ): Promise<Response> {
   const res = await fetch(url, init);
   if (res.status !== 402) return res;
@@ -255,48 +222,11 @@ async function fetchWithX402(
   const option = paymentRequired.accepts?.[0];
   if (!option) throw new Error("No payment options in 402 response");
 
-  // Pay via lobster.cash smart wallet
-  const txHash = await payViaLobster(option, agentId, config);
+  const paymentHeader = await buildX402Payment(
+    option,
+    paymentRequired.x402Version || 2
+  );
 
-  // Fetch the confirmed transaction from Solana RPC so the facilitator
-  // gets real serialized transaction bytes (not just a tx hash string).
-  const SOLANA_RPC = "https://api.mainnet-beta.solana.com";
-  const rpcRes = await fetch(SOLANA_RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "getTransaction",
-      params: [
-        txHash,
-        { encoding: "base64", maxSupportedTransactionVersion: 0 },
-      ],
-    }),
-  });
-  const rpcResult = await rpcRes.json();
-  const txBase64 = rpcResult.result?.transaction?.[0];
-  if (!txBase64)
-    throw new Error(
-      "Could not fetch confirmed transaction from Solana RPC"
-    );
-
-  // Build x402 payment header. The standard @x402 library decodes this as
-  // the paymentPayload sent to the facilitator, so network/scheme must be
-  // top-level. "accepted" echoes the chosen accept entry for requirement matching.
-  const x402Version = paymentRequired.x402Version || 2;
-  const headerPayload = {
-    x402Version,
-    scheme: option.scheme,
-    network: option.network,
-    accepted: option,
-    payload: {
-      transaction: txBase64,
-    },
-  };
-  const paymentHeader = btoa(JSON.stringify(headerPayload));
-
-  // Retry with payment proof
   const retryHeaders = new Headers(init.headers);
   retryHeaders.set("X-PAYMENT", paymentHeader);
   return fetch(url, { ...init, headers: retryHeaders });
@@ -350,21 +280,20 @@ export function createBlockRunModelsTool() {
         };
       } catch (e) {
         return {
-          content: [{ type: "text", text: `Failed: ${(e as Error).message}` }],
+          content: [
+            { type: "text", text: `Failed: ${(e as Error).message}` },
+          ],
         };
       }
     },
   };
 }
 
-export function createBlockRunChatTool(
-  _api: OpenClawPluginApi,
-  config: CrossmintPluginConfig
-) {
+export function createBlockRunChatTool() {
   return {
     name: "blockrun_chat",
     description:
-      "Chat with an AI model via BlockRun. Supports GPT-5, Claude, Gemini, DeepSeek, and 40+ more. Payment via lobster.cash wallet.",
+      "Chat with an AI model via BlockRun. Supports GPT-5, Claude, Gemini, DeepSeek, and 40+ more. Paid with USDC via x402.",
     parameters: Type.Object({
       model: Type.String({
         description:
@@ -381,14 +310,9 @@ export function createBlockRunChatTool(
         Type.Number({ description: "Temperature 0-2 (default: 1)" })
       ),
     }),
-    async execute(
-      _id: string,
-      params: Record<string, unknown>,
-      ctx: OpenClawPluginToolContext
-    ) {
+    async execute(_id: string, params: Record<string, unknown>) {
       const model = params.model as string;
       const message = params.message as string;
-      const agentId = getAgentId(ctx);
       if (!model || !message)
         return {
           content: [{ type: "text", text: "model and message are required." }],
@@ -410,9 +334,7 @@ export function createBlockRunChatTool(
               max_tokens: (params.maxTokens as number) || 1024,
               temperature: (params.temperature as number) ?? 1,
             }),
-          },
-          agentId,
-          config
+          }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
         const result = await res.json();
@@ -437,14 +359,11 @@ export function createBlockRunChatTool(
   };
 }
 
-export function createBlockRunImageTool(
-  _api: OpenClawPluginApi,
-  config: CrossmintPluginConfig
-) {
+export function createBlockRunImageTool() {
   return {
     name: "blockrun_image",
     description:
-      "Generate an image via BlockRun. Supports DALL-E 3, GPT Image 1, and Flux 1.1 Pro. Payment via lobster.cash wallet.",
+      "Generate an image via BlockRun. Supports DALL-E 3, GPT Image 1, and Flux 1.1 Pro. Paid with USDC via x402.",
     parameters: Type.Object({
       prompt: Type.String({ description: "Image description" }),
       model: Type.Optional(
@@ -463,13 +382,8 @@ export function createBlockRunImageTool(
         Type.String({ description: "'standard' (default) or 'hd'" })
       ),
     }),
-    async execute(
-      _id: string,
-      params: Record<string, unknown>,
-      ctx: OpenClawPluginToolContext
-    ) {
+    async execute(_id: string, params: Record<string, unknown>) {
       const prompt = params.prompt as string;
-      const agentId = getAgentId(ctx);
       if (!prompt)
         return {
           content: [{ type: "text", text: "prompt is required." }],
@@ -488,9 +402,7 @@ export function createBlockRunImageTool(
               quality: (params.quality as string) || "standard",
               n: 1,
             }),
-          },
-          agentId,
-          config
+          }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
         const result = await res.json();

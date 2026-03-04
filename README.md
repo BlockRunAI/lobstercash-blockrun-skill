@@ -29,8 +29,8 @@ If you prefer to patch manually, add to your `index.ts`:
 import { createBlockRunModelsTool, createBlockRunChatTool, createBlockRunImageTool } from "./src/blockrun-tools.js";
 
 api.registerTool(createBlockRunModelsTool(), { name: "blockrun_models" });
-api.registerTool(createBlockRunChatTool(api, config), { name: "blockrun_chat" });
-api.registerTool(createBlockRunImageTool(api, config), { name: "blockrun_image" });
+api.registerTool(createBlockRunChatTool(), { name: "blockrun_chat" });
+api.registerTool(createBlockRunImageTool(), { name: "blockrun_image" });
 ```
 
-No new dependencies — uses lobster.cash's existing wallet, API, and config modules.
+Dependencies: `@solana/web3.js`, `bs58`. Agent keypair's ATA must be funded with USDC.
