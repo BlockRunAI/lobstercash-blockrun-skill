@@ -181,6 +181,7 @@ interface X402PaymentOption {
 
 interface X402PaymentRequired {
   x402Version: number;
+  resource?: { url?: string; description?: string; contentType?: string };
   accepts: X402PaymentOption[];
 }
 
@@ -257,14 +258,31 @@ async function fetchWithX402(
   // Pay via lobster.cash smart wallet
   const txHash = await payViaLobster(option, agentId, config);
 
-  // Build x402 payment header with settled transaction proof
-  const paymentPayload = {
-    x402Version: paymentRequired.x402Version || 2,
-    payload: {
+  // Build x402 payment header matching facilitator's expected format.
+  // The facilitator validates paymentPayload (needs network, scheme) and
+  // paymentRequirements (needs description, maxAmountRequired, resource).
+  const x402Version = paymentRequired.x402Version || 2;
+  const headerPayload = {
+    x402Version,
+    paymentPayload: {
+      network: option.network,
+      scheme: option.scheme,
       transaction: txHash,
     },
+    paymentRequirements: {
+      scheme: option.scheme,
+      network: option.network,
+      asset: option.asset,
+      amount: option.amount,
+      payTo: option.payTo,
+      maxTimeoutSeconds: option.maxTimeoutSeconds,
+      extra: option.extra,
+      description: paymentRequired.resource?.description || "",
+      maxAmountRequired: option.amount,
+      resource: paymentRequired.resource?.url || url,
+    },
   };
-  const paymentHeader = btoa(JSON.stringify(paymentPayload));
+  const paymentHeader = btoa(JSON.stringify(headerPayload));
 
   // Retry with payment proof
   const retryHeaders = new Headers(init.headers);
