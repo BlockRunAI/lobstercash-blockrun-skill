@@ -258,28 +258,17 @@ async function fetchWithX402(
   // Pay via lobster.cash smart wallet
   const txHash = await payViaLobster(option, agentId, config);
 
-  // Build x402 payment header matching facilitator's expected format.
-  // The facilitator validates paymentPayload (needs network, scheme) and
-  // paymentRequirements (needs description, maxAmountRequired, resource).
+  // Build x402 payment header. The standard @x402 library decodes this as
+  // the paymentPayload sent to the facilitator, so network/scheme must be
+  // top-level. "accepted" echoes the chosen accept entry for requirement matching.
   const x402Version = paymentRequired.x402Version || 2;
   const headerPayload = {
     x402Version,
-    paymentPayload: {
-      network: option.network,
-      scheme: option.scheme,
+    scheme: option.scheme,
+    network: option.network,
+    accepted: option,
+    payload: {
       transaction: txHash,
-    },
-    paymentRequirements: {
-      scheme: option.scheme,
-      network: option.network,
-      asset: option.asset,
-      amount: option.amount,
-      payTo: option.payTo,
-      maxTimeoutSeconds: option.maxTimeoutSeconds,
-      extra: option.extra,
-      description: paymentRequired.resource?.description || "",
-      maxAmountRequired: option.amount,
-      resource: paymentRequired.resource?.url || url,
     },
   };
   const paymentHeader = btoa(JSON.stringify(headerPayload));
