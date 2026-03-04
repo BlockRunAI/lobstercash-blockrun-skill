@@ -1,74 +1,36 @@
 # BlockRun AI Skill for lobster.cash
 
-Drop-in BlockRun AI integration for the [lobster.cash](https://lobster.cash) OpenClaw plugin. Adds 3 tools that let the agent chat with 40+ AI models and generate images via [BlockRun](https://sol.blockrun.ai).
+Gives lobster.cash agents access to 40+ AI models and image generation via [BlockRun](https://sol.blockrun.ai). Payment handled automatically by lobster.cash via x402.
 
-The tools call the BlockRun API directly. Payment execution is delegated to lobster.cash via x402 — no wallet or signing logic in these files.
+## Install
 
-## What's Included
+From your lobster.cash plugin directory:
 
-```
-skills/blockrun/SKILL.md     # AI skill guide (tells the agent when/how to use BlockRun)
-src/blockrun-tools.ts        # 3 OpenClaw tool factories
-```
-
-## Tools
-
-| Tool | Description |
-|------|-------------|
-| `blockrun_models` | List available AI models with pricing |
-| `blockrun_chat` | Chat with any model (GPT-5, Claude, Gemini, DeepSeek, etc.) |
-| `blockrun_image` | Generate images (DALL-E 3, GPT Image 1, Flux 1.1 Pro) |
-
-## Integration Steps
-
-### 1. Copy files into the lobster.cash plugin
-
-```
-cp src/blockrun-tools.ts  <lobster-plugin>/src/blockrun-tools.ts
-cp -r skills/blockrun     <lobster-plugin>/skills/blockrun
+```bash
+curl -sSL https://raw.githubusercontent.com/BlockRunAI/lobstercash-blockrun-skill/main/install.sh | bash
 ```
 
-### 2. Register tools in `index.ts`
+That's it. The script downloads the skill and adds it to your `openclaw.plugin.json`.
 
-Add the imports:
+## What the agent can do
 
-```ts
-import {
-  createBlockRunModelsTool,
-  createBlockRunChatTool,
-  createBlockRunImageTool,
-} from "./src/blockrun-tools.js";
-```
+| Capability | Example |
+|------------|---------|
+| Chat with 40+ models | "Ask GPT-5 to explain quantum computing" |
+| Generate images | "Create an image of a sunset over the ocean" |
+| Browse models & pricing | "What AI models are available?" |
 
-Inside `register()`:
-
-```ts
-api.registerTool(createBlockRunModelsTool(api, config), { name: "blockrun_models" });
-api.registerTool(createBlockRunChatTool(api, config), { name: "blockrun_chat" });
-api.registerTool(createBlockRunImageTool(api, config), { name: "blockrun_image" });
-```
-
-### 3. Add skill to `openclaw.plugin.json`
-
-```json
-{
-  "skills": ["crossmint", "blockrun"]
-}
-```
-
-That's it. No new dependencies required.
-
-## API Endpoints
+## API
 
 All requests go to `https://sol.blockrun.ai/api/v1/`:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/models` | List models and pricing |
-| POST | `/chat/completions` | Chat completion |
-| POST | `/images/generations` | Image generation |
+- `GET /models` — list models
+- `POST /chat/completions` — chat (OpenAI-compatible)
+- `POST /images/generations` — image generation
 
-## Requirements
+## Manual install
 
-- `@sinclair/typebox` (already in lobster.cash plugin)
-- A funded lobster.cash wallet with USDC (for paid models)
+If you prefer not to use the script:
+
+1. Copy `skills/blockrun/SKILL.md` into your plugin's `skills/blockrun/` directory
+2. Add `"blockrun"` to the `skills` array in `openclaw.plugin.json`
