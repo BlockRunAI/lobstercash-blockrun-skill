@@ -258,6 +258,29 @@ async function fetchWithX402(
   // Pay via lobster.cash smart wallet
   const txHash = await payViaLobster(option, agentId, config);
 
+  // Fetch the confirmed transaction from Solana RPC so the facilitator
+  // gets real serialized transaction bytes (not just a tx hash string).
+  const SOLANA_RPC = "https://api.mainnet-beta.solana.com";
+  const rpcRes = await fetch(SOLANA_RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getTransaction",
+      params: [
+        txHash,
+        { encoding: "base64", maxSupportedTransactionVersion: 0 },
+      ],
+    }),
+  });
+  const rpcResult = await rpcRes.json();
+  const txBase64 = rpcResult.result?.transaction?.[0];
+  if (!txBase64)
+    throw new Error(
+      "Could not fetch confirmed transaction from Solana RPC"
+    );
+
   // Build x402 payment header. The standard @x402 library decodes this as
   // the paymentPayload sent to the facilitator, so network/scheme must be
   // top-level. "accepted" echoes the chosen accept entry for requirement matching.
@@ -268,7 +291,7 @@ async function fetchWithX402(
     network: option.network,
     accepted: option,
     payload: {
-      transaction: txHash,
+      transaction: txBase64,
     },
   };
   const paymentHeader = btoa(JSON.stringify(headerPayload));
