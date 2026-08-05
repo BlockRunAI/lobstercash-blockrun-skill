@@ -1,6 +1,6 @@
 # BlockRun AI Skill for lobster.cash
 
-Gives lobster.cash agents access to <!-- br:models.chatVisible -->66<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). Payment handled by the lobster.cash smart wallet via x402.
+Gives lobster.cash agents access to <!-- br:models.chatVisible -->71<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). Payment handled by the lobster.cash smart wallet via x402.
 
 ## Install
 

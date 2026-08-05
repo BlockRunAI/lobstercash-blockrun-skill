@@ -6,7 +6,7 @@ metadata: { "openclaw": { "emoji": "🤖" } }
 
 # BlockRun AI
 
-Access <!-- br:models.chatVisible -->66<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). No API keys needed — payment is handled automatically by lobster.cash via x402.
+Access <!-- br:models.chatVisible -->71<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). No API keys needed — payment is handled automatically by lobster.cash via x402.
 
 > This skill delegates wallet operations and payment execution to lobster.cash.
 
