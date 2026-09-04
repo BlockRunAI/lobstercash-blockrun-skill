@@ -6,9 +6,9 @@ metadata: { "openclaw": { "emoji": "🤖" } }
 
 # BlockRun AI
 
-Access <!-- br:models.chatVisible -->76<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). No API keys needed — payment is handled automatically by lobster.cash via x402.
+Access <!-- br:models.chatVisible -->76<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). Use a BlockRun account API key, or pay through the lobster.cash Solana wallet via x402.
 
-> This skill delegates wallet operations and payment execution to lobster.cash.
+> Account mode uses BlockRun credits. Wallet mode delegates Solana payment execution to lobster.cash.
 
 ## When to Activate
 
@@ -29,7 +29,9 @@ Use this skill when the user:
 
 ## Prerequisites
 
-The lobster.cash wallet must be set up and funded with USDC before using paid BlockRun tools. The lobster.cash plugin handles wallet setup automatically — BlockRun tools just call the API.
+For account access, direct the user to [register](https://user.blockrun.ai), [create a key](https://user.blockrun.ai/dashboard/keys), and [add credits](https://user.blockrun.ai/dashboard/credits). The user sets `BLOCKRUN_API_KEY` in the gateway environment and restarts it. Never ask them to paste credentials into chat or tool arguments. All three tools use that key without reading wallet files.
+
+Without a key, set up the lobster.cash **Solana** wallet and fund it with USDC. **Base** access is available through the main BlockRun SDK; this adapter only implements Solana wallet signing.
 
 ## Common Operations
 
@@ -89,13 +91,15 @@ Use `blockrun_models` for the full up-to-date list.
 
 ## How Payment Works
 
-BlockRun uses the **x402 protocol**. Transaction execution and final status are handled by lobster.cash:
+With `BLOCKRUN_API_KEY`, requests go to `https://api.blockrun.ai/v1` and charge account credits. A 401, 402 or 429 is an account error; do not switch to a wallet or automatically replay a paid call.
+
+Without a key, BlockRun uses **x402**. Transaction execution and final status are handled by lobster.cash:
 
 1. Tool sends the AI request to `sol.blockrun.ai`
 2. If payment is required, lobster.cash handles wallet signing and settlement
 3. AI response is returned
 
-No API keys, no subscriptions — just pay for what you use.
+Choose account credits or Solana wallet billing.
 
 ## Tool Parameters
 
@@ -133,6 +137,7 @@ No API keys, no subscriptions — just pay for what you use.
 ## Troubleshooting
 
 - **Model not found** — Use `blockrun_models` to verify the model ID
+- **Invalid key / insufficient credits** — use the account key or credits pages above; do not request a wallet deposit in account mode
 - **Payment failed** — Check wallet USDC balance via lobster.cash wallet tools
 - **Empty response** — Try a different model or adjust max_tokens
 
