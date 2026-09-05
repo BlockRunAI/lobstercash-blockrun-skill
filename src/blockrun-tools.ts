@@ -10,8 +10,38 @@ import {
 } from "@solana/web3.js";
 import bs58 from "bs58";
 
-const BLOCKRUN_API =
-  "https://blockrun-sol-staging-demo-1092497648280.us-central1.run.app/api/v1";
+const SOLANA_API = "https://sol.blockrun.ai/api/v1";
+const ACCOUNT_API = "https://api.blockrun.ai/v1";
+
+function accountKey(): string | undefined {
+  const key = process.env.BLOCKRUN_API_KEY?.trim();
+  if (!key) return undefined;
+  if (!/^brk_[A-Za-z0-9_-]+$/.test(key)) throw new Error("Invalid BLOCKRUN_API_KEY. Create a key at https://user.blockrun.ai/dashboard/keys.");
+  return key;
+}
+
+function safeError(error: unknown): string {
+  const key = process.env.BLOCKRUN_API_KEY?.trim();
+  const message = error instanceof Error ? error.message : String(error);
+  return (key ? message.split(key).join("[REDACTED]") : message).slice(0, 500);
+}
+
+/** Account mode takes precedence; a rejected account key never falls back to a wallet. */
+async function blockrunFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const key = accountKey();
+  const url = `${key ? ACCOUNT_API : SOLANA_API}${path}`;
+  const headers = new Headers(init.headers);
+  const request = { ...init, headers, redirect: "error" as const, signal: AbortSignal.timeout(120_000) };
+  if (!key) return fetchWithX402(url, request);
+  headers.set("Authorization", `Bearer ${key}`);
+  const response = await fetch(url, request);
+  if (!response.ok) {
+    const hint = response.status === 401 ? "Check your API key at https://user.blockrun.ai/dashboard/keys."
+      : response.status === 402 ? "Add credits at https://user.blockrun.ai/dashboard/credits." : "";
+    throw new Error(`Account API HTTP ${response.status}. ${hint} ${safeError(await response.text())}`);
+  }
+  return response;
+}
 const SOLANA_RPC = "https://api.mainnet-beta.solana.com";
 
 const TOKEN_PROGRAM_ID = new PublicKey(
@@ -248,7 +278,7 @@ export function createBlockRunModelsTool() {
     }),
     async execute(_id: string, params: Record<string, unknown>) {
       try {
-        const res = await fetch(`${BLOCKRUN_API}/models`);
+        const res = await blockrunFetch("/models");
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
         const result = await res.json();
         const filter = (params.filter as string)?.toLowerCase();
@@ -281,7 +311,7 @@ export function createBlockRunModelsTool() {
       } catch (e) {
         return {
           content: [
-            { type: "text", text: `Failed: ${(e as Error).message}` },
+            { type: "text", text: `Failed: ${safeError(e)}` },
           ],
         };
       }
@@ -293,7 +323,7 @@ export function createBlockRunChatTool() {
   return {
     name: "blockrun_chat",
     description:
-      "Chat with an AI model via BlockRun. Supports GPT-5, Claude, Gemini, DeepSeek, and 40+ more. Paid with USDC via x402.",
+      "Chat with an AI model via BlockRun. Supports GPT-5, Claude, Gemini, DeepSeek, and 40+ more. Billed to your BlockRun account, or paid with Solana USDC via x402.",
     parameters: Type.Object({
       model: Type.String({
         description:
@@ -323,8 +353,8 @@ export function createBlockRunChatTool() {
           messages.push({ role: "system", content: params.systemPrompt });
         messages.push({ role: "user", content: message });
 
-        const res = await fetchWithX402(
-          `${BLOCKRUN_API}/chat/completions`,
+        const res = await blockrunFetch(
+          "/chat/completions",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -351,7 +381,7 @@ export function createBlockRunChatTool() {
       } catch (e) {
         return {
           content: [
-            { type: "text", text: `Chat failed: ${(e as Error).message}` },
+            { type: "text", text: `Chat failed: ${safeError(e)}` },
           ],
         };
       }
@@ -363,7 +393,7 @@ export function createBlockRunImageTool() {
   return {
     name: "blockrun_image",
     description:
-      "Generate an image via BlockRun. Supports DALL-E 3, GPT Image 1, and Flux 1.1 Pro. Paid with USDC via x402.",
+      "Generate an image via BlockRun. Supports DALL-E 3, GPT Image 1, and Flux 1.1 Pro. Billed to your BlockRun account, or paid with Solana USDC via x402.",
     parameters: Type.Object({
       prompt: Type.String({ description: "Image description" }),
       model: Type.Optional(
@@ -390,8 +420,8 @@ export function createBlockRunImageTool() {
         };
       const model = (params.model as string) || "openai/dall-e-3";
       try {
-        const res = await fetchWithX402(
-          `${BLOCKRUN_API}/images/generations`,
+        const res = await blockrunFetch(
+          "/images/generations",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -424,7 +454,7 @@ export function createBlockRunImageTool() {
           content: [
             {
               type: "text",
-              text: `Image generation failed: ${(e as Error).message}`,
+              text: `Image generation failed: ${safeError(e)}`,
             },
           ],
         };
