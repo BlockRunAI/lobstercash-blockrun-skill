@@ -6,7 +6,7 @@ metadata: { "openclaw": { "emoji": "🤖" } }
 
 # BlockRun AI
 
-Access <!-- br:models.chatVisible -->76<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). Use a BlockRun account API key, or pay through the lobster.cash Solana wallet via x402.
+Access <!-- br:models.chatVisible -->78<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). Use a BlockRun account API key, or pay through the lobster.cash Solana wallet via x402.
 
 > Account mode uses BlockRun credits. Wallet mode delegates Solana payment execution to lobster.cash.
 

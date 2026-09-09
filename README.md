@@ -1,6 +1,6 @@
 # BlockRun AI Skill for lobster.cash
 
-Gives lobster.cash agents access to <!-- br:models.chatVisible -->76<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). Use a BlockRun account API key, or the lobster.cash Solana wallet via x402.
+Gives lobster.cash agents access to <!-- br:models.chatVisible -->78<!-- /br:models.chatVisible --> AI models and image generation via [BlockRun](https://sol.blockrun.ai). Use a BlockRun account API key, or the lobster.cash Solana wallet via x402.
 
 ## Account API setup
 
